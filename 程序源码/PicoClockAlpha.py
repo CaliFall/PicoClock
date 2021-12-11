@@ -1,4 +1,5 @@
 import machine
+from machine import Timer
 from utime import sleep, sleep_ms
 from ssd1306 import SSD1306_I2C
 import ds3231
@@ -47,8 +48,8 @@ class PicoClock:
         print('i2c_1 addr:' + str(i2c_1.scan()))
 
         # 定义oled显示屏
-        self.oled_0 = SSD1306_I2C(128, 64, i2c_0)
-        self.oled_1 = SSD1306_I2C(128, 32, i2c_1)
+        self.oled_0 = SSD1306_I2C(128, 64, i2c_0, addr=0x3c)
+        self.oled_1 = SSD1306_I2C(128, 32, i2c_1, addr=0x3c)
 
     def init_button(self):
         self.button_u = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_DOWN)
@@ -397,11 +398,14 @@ class PicoClock:
             self.setting_control(mode='read')
             print("Setting Updated And Loaded")
 
+    def shot_timer(self, _):
+        self.timer_cond = 1
+
     # 重要功能部分 # 主界面
     def fun_MainMenu(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        week_lis = ["SUN", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]  # 星期名
+        week_lis = ["Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]  # 星期名
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
@@ -431,7 +435,7 @@ class PicoClock:
             #  绘制日期
             self.text_m("20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]), 28)
             #  绘制星期
-            self.text_m("%s" % (week_lis[self.TimeDS3231[3] - 1]), 38)
+            self.text_m("%s" % (week_lis[self.TimeDS3231[3]]), 38)
 
             self.show_fps(s=self.TimeDS3231[0])  # 显示fps
 
@@ -556,7 +560,7 @@ class PicoClock:
                 sleep_ms(50)
 
     # 普通弹窗
-    def jump_window(self, title='!Notice!', code=''):
+    def jump_window(self, title='!Notice!', code='null'):
         self.is_button_ready = 0
 
         width = 100
@@ -1227,7 +1231,9 @@ class PicoClock:
         # Load the raspberry pi logo into the framebuffer (the image is 32x32)
         logo = framebuf.FrameBuffer(logo, 32, 32, framebuf.MONO_HLSB)
 
-        delta_x = 0
+        tim = Timer()
+        tim.init(mode=Timer.ONE_SHOT, period=3000, callback=self.shot_timer)
+        self.timer_cond = 0
 
         while True:
             self.TimeDS3231 = ds3231.ReportList()  # 获取时间
@@ -1242,6 +1248,10 @@ class PicoClock:
             elif ButtonSign == 0 and self.is_button_ready == 0:
                 self.is_button_ready = 1
 
+            if self.timer_cond:
+                tim.deinit()
+                return 0
+
             ###主屏幕内容###
             self.clear()  # 清除所有
 
@@ -1254,8 +1264,69 @@ class PicoClock:
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
 
-    # 设置
+    # 设置弹窗
     def fun_Setting(self):
+        self.is_init_fps = 0  # fps计数器初始化
+        self.is_button_ready = 0  # 按钮复位标志初始化
+        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+
+        self.clear(id=2)
+        self.show(id=2)  # 清空两个屏幕
+
+        focus_now = 0
+        while True:
+            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+
+            # 按钮部分
+            ButtonSign = self.button_sign()  # 获取按钮状态
+            # 检测按钮做出反应
+            if ButtonSign != 0 and self.is_button_ready == 1:
+                self.is_button_ready = 0
+                if ButtonSign == 'l' or ButtonSign == 'u':
+                    if focus_now:
+                        focus_now = 0
+                    else:
+                        focus_now = 1
+                elif ButtonSign == 'r' or ButtonSign == 'd':
+                    if focus_now:
+                        focus_now = 0
+                    else:
+                        focus_now = 1
+                elif ButtonSign == 'y':
+                    if focus_now == 0:
+                        self.fun_SettingSwitch()
+                    elif focus_now == 1:
+                        self.fun_SettingTime()
+                elif ButtonSign == 'n':
+                    return 0
+
+            elif ButtonSign == 0 and self.is_button_ready == 0:
+                self.is_button_ready = 1
+
+            ###主屏幕内容###
+            self.clear()  # 清除所有
+            self.draw_border()  # 绘制边界
+
+            self.oled_0.text("Choose:", 24, 13)
+            self.oled_0.text("Set Switch", 24, 28)
+            self.oled_0.text("Set Time", 24, 43)
+
+            self.oled_0.text("->", 4, focus_now * 15 + 28)
+
+            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show()  # 绘制所有
+
+            ###副屏幕内容###
+            if self.frame_counter == 0:
+                self.clear(id=1)
+                self.text_m("[Yes] to Confirm", 16 - 9, id=1)
+                self.text_m("[NO]  to Return ", 16, id=1)
+                self.show(id=1)
+
+            self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
+
+    # 设置(开关)
+    def fun_SettingSwitch(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
         self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
@@ -1269,6 +1340,7 @@ class PicoClock:
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
+
         while True:
             self.TimeDS3231 = ds3231.ReportList()  # 获取时间
 
@@ -1349,6 +1421,118 @@ class PicoClock:
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
 
+    # 设置(时间)
+    def fun_SettingTime(self):
+        self.is_init_fps = 0  # fps计数器初始化
+        self.is_button_ready = 0  # 按钮复位标志初始化
+        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+
+        self.clear(id=2)
+        self.show(id=2)  # 清空两个屏幕
+
+        # sec min hour week day mon year
+        NowTime = b'\x00\x00\x15\x04\x21\x01\x21'
+
+        focus_now = 0  # 当前选择
+        setting_lis = ['Set Hour', 'Set Minute', 'Set Second',
+                       'Set Year', 'Set Month', 'Set Day', 'Set Week']
+        week_lis = ["Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]
+        while True:
+            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+
+            # 按钮部分
+            ButtonSign = self.button_sign()  # 获取按钮状态
+            # 检测按钮做出反应
+            if ButtonSign != 0 and self.is_button_ready == 1:
+                self.is_button_ready = 0
+                # 返回键
+                if ButtonSign == 'n':
+                    return 0
+                # 确认键
+                elif ButtonSign == 'y':
+
+                    temp = self.input_keyboard()
+                    if temp != 'null' and 1 <= len(temp) <=2 and temp.isdigit():
+                        ind = int(temp)
+                        time_set = self.TimeDS3231.copy()
+
+                        ok = 1
+
+                        if setting_lis[focus_now] == 'Set Second' and 0 <= ind <= 59:
+                            time_set[0] = ind
+                        elif setting_lis[focus_now] == 'Set Minute' and 0 <= ind <= 59:
+                            time_set[1] = ind
+                        elif setting_lis[focus_now] == 'Set Hour' and 0 <= ind <= 23:
+                            time_set[2] = ind
+                        elif setting_lis[focus_now] == 'Set Week' and 0 <= ind <= 7:
+                            time_set[3] = ind % 7
+                        elif setting_lis[focus_now] == 'Set Day' and 0 <= ind <= 31:
+                            time_set[4] = ind
+                        elif setting_lis[focus_now] == 'Set Month' and 0 <= ind <= 12:
+                            time_set[5] = ind
+                        elif setting_lis[focus_now] == 'Set Year' and 0 <= ind <= 99:
+                            time_set[6] = ind
+                        else:
+                            ok = 0
+
+                        if ok:
+                            # 先将10进制当作16进制转换为10进制,因为bytes()会把10进制转换为16进制
+                            for i in range(len(time_set)):
+                                time_set[i] = int(str(time_set[i]), 16)
+                            time_set = bytes(time_set)
+                            ds3231.SetTime(time_set)
+
+                            self.jump_window(code='Success')
+                    else:
+                        self.error_window(code='Wrong Input')
+
+
+                # 上
+                elif ButtonSign == 'u' or ButtonSign == 'l':
+                    if focus_now == 0:
+                        focus_now = len(setting_lis) - 1
+                    else:
+                        focus_now -= 1
+                # 下
+                elif ButtonSign == 'd' or ButtonSign == 'r':
+                    if focus_now == len(setting_lis) - 1:
+                        focus_now = 0
+                    else:
+                        focus_now += 1
+
+            elif ButtonSign == 0 and self.is_button_ready == 0:
+                self.is_button_ready = 1
+
+            ###主屏幕内容###
+            self.clear()  # 清除所有
+            self.oled_0.text('->', 3, 32)  # 箭头
+
+            for i in [-2, -1, 0, 1, 2]:
+                try:
+                    if focus_now + i >= 0:
+                        # 打印选项名
+                        self.oled_0.text(setting_lis[focus_now + i], 20, 32 + i * 8)
+                    else:
+                        pass
+                except Exception:
+                    pass
+
+            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show()  # 绘制所有
+
+            ###副屏幕内容###
+            if self.frame_counter == 0:
+                self.clear(id=1)
+                # 绘制时间
+                self.oled_1.text("Time=%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 0, 0)
+                #  绘制日期
+                self.oled_1.text("Date=20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]), 0, 8)
+                #  绘制星期
+                self.oled_1.text("Day of Week=%s" % (week_lis[self.TimeDS3231[3]]), 0, 16)
+                self.show(id=1)
+
+            self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
+
     # 进制转换器
     def fun_UnitConverter(self):
         self.is_init_fps = 0  # fps计数器初始化
@@ -1379,7 +1563,6 @@ class PicoClock:
             ###副屏幕内容###
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
-
 
 
 if __name__ == '__main__':
