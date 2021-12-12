@@ -22,7 +22,7 @@ from math import *
 
 class PicoClock:
     def __init__(self):
-        self.sht30 = sht30.SHT30()  # 初始化温度湿度传感器
+        self.sht30 = sht30.SHT30(scl_pin=9, sda_pin=8)  # 初始化温度湿度传感器
         self.init_i2c()  # 初始化i2c
         self.init_button()  # 初始化物理按钮
         self.setting_control(mode='read')  # 从文件读取设置
@@ -34,30 +34,30 @@ class PicoClock:
     # 基础函数部分
     def init_i2c(self):
         # 定义0和1号i2c引脚
-        sda_0 = machine.Pin(0)
-        scl_0 = machine.Pin(1)
-        sda_1 = machine.Pin(14)
-        scl_1 = machine.Pin(15)
+        sda_0 = machine.Pin(8)
+        scl_0 = machine.Pin(9)
+        # sda_1 = machine.Pin(14)
+        # scl_1 = machine.Pin(15)
 
         # 定义0和1号i2c
         i2c_0 = machine.I2C(0, sda=sda_0, scl=scl_0, freq=400000)
-        i2c_1 = machine.I2C(1, sda=sda_1, scl=scl_1, freq=400000)
+        # i2c_1 = machine.I2C(1, sda=sda_1, scl=scl_1, freq=400000)
 
         # 测试用,打印0和1号i2c检测到的设备地址
         print('i2c_0 addr:' + str(i2c_0.scan()))
-        print('i2c_1 addr:' + str(i2c_1.scan()))
+        # print('i2c_1 addr:' + str(i2c_1.scan()))
 
         # 定义oled显示屏
-        self.oled_0 = SSD1306_I2C(128, 64, i2c_0, addr=0x3c)
-        self.oled_1 = SSD1306_I2C(128, 32, i2c_1, addr=0x3c)
+        self.oled_0 = SSD1306_I2C(128, 64, i2c_0, addr=0x3d)
+        self.oled_1 = SSD1306_I2C(128, 32, i2c_0, addr=0x3c)
 
     def init_button(self):
-        self.button_u = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        self.button_d = machine.Pin(4, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        self.button_l = machine.Pin(5, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        self.button_r = machine.Pin(6, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        self.button_y = machine.Pin(7, machine.Pin.IN, machine.Pin.PULL_DOWN)
-        self.button_n = machine.Pin(8, machine.Pin.IN, machine.Pin.PULL_DOWN)
+        self.button_u = machine.Pin(12, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.button_d = machine.Pin(11, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.button_l = machine.Pin(26, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.button_r = machine.Pin(15, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.button_y = machine.Pin(10, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.button_n = machine.Pin(14, machine.Pin.IN, machine.Pin.PULL_UP)
 
     def init_switch(self):
         self.switch_fps = True
@@ -65,7 +65,8 @@ class PicoClock:
         self.switch_ShowBootLogo = True
 
     def init_pin(self):
-        self.inner_rgb = machine.Pin(29, machine.Pin.OUT)
+        # self.inner_rgb = machine.Pin(29, machine.Pin.OUT)
+        pass
 
     def init_var(self):
         self.is_init_fps = 0  # fps计数器是否初始化
@@ -280,39 +281,38 @@ class PicoClock:
 
     # 关键函数部分
     def button_sign(self):
-        if self.button_u.value() == 1:
+        if self.button_u.value() == 0:
             self.sleep_button()
-            if self.button_u.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_u.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'u'
-        elif self.button_d.value() == 1:
+        elif self.button_d.value() == 0:
             self.sleep_button()
-            if self.button_d.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_d.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'd'
-        elif self.button_l.value() == 1:
+        elif self.button_l.value() == 0:
             self.sleep_button()
-            if self.button_l.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_l.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'l'
-        elif self.button_r.value() == 1:
+        elif self.button_r.value() == 0:
             self.sleep_button()
-            if self.button_r.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_r.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'r'
-        elif self.button_y.value() == 1:
+        elif self.button_y.value() == 0:
             self.sleep_button()
-            if self.button_y.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_y.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'y'
-        elif self.button_n.value() == 1:
+        elif self.button_n.value() == 0:
             self.sleep_button()
-            if self.button_n.value() == 1:
-                self.inner_rgb.value(1)
+            if self.button_n.value() == 0:
+                # self.inner_rgb.value(1)
                 return 'n'
-
         else:
-            self.inner_rgb.value(0)
+            # self.inner_rgb.value(0)
             return 0
 
     def show_fps(self, s, id=0, switch=1):
@@ -380,7 +380,7 @@ class PicoClock:
                     f.write(str(self.setting_dic))
                 print(file_name + " Initialized")
             except OSError:
-                #如果出错
+                # 如果出错
                 self.error_window('OSError')
         # 覆写设置
         elif mode == 'overwrite':
@@ -390,7 +390,7 @@ class PicoClock:
                     f.write(str(self.setting_dic))
                 print(file_name + " Updated")
             except OSError:
-                #如果出错
+                # 如果出错
                 self.error_window('OSError')
         # 更新(先写再读)
         elif mode == 'update':
@@ -1452,7 +1452,7 @@ class PicoClock:
                 elif ButtonSign == 'y':
 
                     temp = self.input_keyboard()
-                    if temp != 'null' and 1 <= len(temp) <=2 and temp.isdigit():
+                    if temp != 'null' and 1 <= len(temp) <= 2 and temp.isdigit():
                         ind = int(temp)
                         time_set = self.TimeDS3231.copy()
 
@@ -1524,9 +1524,11 @@ class PicoClock:
             if self.frame_counter == 0:
                 self.clear(id=1)
                 # 绘制时间
-                self.oled_1.text("Time=%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 0, 0)
+                self.oled_1.text("Time=%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]),
+                                 0, 0)
                 #  绘制日期
-                self.oled_1.text("Date=20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]), 0, 8)
+                self.oled_1.text("Date=20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]),
+                                 0, 8)
                 #  绘制星期
                 self.oled_1.text("Day of Week=%s" % (week_lis[self.TimeDS3231[3]]), 0, 16)
                 self.show(id=1)
