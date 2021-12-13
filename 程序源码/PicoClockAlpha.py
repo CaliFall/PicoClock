@@ -22,7 +22,6 @@ from math import *
 
 class PicoClock:
     def __init__(self):
-        self.sht30 = sht30.SHT30(scl_pin=9, sda_pin=8)  # 初始化温度湿度传感器
         self.init_i2c()  # 初始化i2c
         self.init_button()  # 初始化物理按钮
         self.setting_control(mode='read')  # 从文件读取设置
@@ -906,7 +905,7 @@ class PicoClock:
         self.is_button_ready = 0  # 按钮复位标志初始化
         self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
 
-        sht31 = sht30.SHT30()
+        sht31 = sht30.SHT30(sda_pin=8,scl_pin=9)
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
