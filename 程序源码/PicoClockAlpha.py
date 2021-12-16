@@ -1,5 +1,5 @@
 import machine
-from machine import Timer
+from machine import Timer,Pin
 from utime import sleep, sleep_ms
 from ssd1306 import SSD1306_I2C
 import ds3231
@@ -73,7 +73,7 @@ class PicoClock:
         self.is_button_ready = 0  # 按钮是否准备就绪
         self.refresh_scale = 3  # 副屏幕刷新速度控制,是几就代表是主屏幕的几分之一
         self.sleep_time_learning = 0  # 可变的睡眠时间
-        self.fps_limit = 10  # 帧率限制
+        self.fps_limit = 9  # 帧率限制
 
     def init_icon(self):
         self.icon_dic = {'icon_little_a': ['010', '101', '111', '101', '101'],
@@ -397,9 +397,6 @@ class PicoClock:
             self.setting_control(mode='read')
             print("Setting Updated And Loaded")
 
-    def shot_timer(self, _):
-        self.timer_cond = 1
-
     # 重要功能部分 # 主界面
     def fun_MainMenu(self):
         self.is_init_fps = 0  # fps计数器初始化
@@ -422,6 +419,8 @@ class PicoClock:
                 self.is_button_ready = 0
                 if ButtonSign == 'y':
                     self.fun_SubMenu()
+                elif ButtonSign == 'n':
+                    self.fun_PowerSave()
             elif ButtonSign == 0 and self.is_button_ready == 0:
                 self.is_button_ready = 1
 
@@ -1231,8 +1230,8 @@ class PicoClock:
         logo = framebuf.FrameBuffer(logo, 32, 32, framebuf.MONO_HLSB)
 
         tim = Timer()
-        tim.init(mode=Timer.ONE_SHOT, period=3000, callback=self.shot_timer)
-        self.timer_cond = 0
+        tim.init(mode=Timer.ONE_SHOT, period=3000, callback=self.timer_shot_BootLogo)
+        self.timer_cond_BootLogo = 0
 
         while True:
             self.TimeDS3231 = ds3231.ReportList()  # 获取时间
@@ -1247,7 +1246,7 @@ class PicoClock:
             elif ButtonSign == 0 and self.is_button_ready == 0:
                 self.is_button_ready = 1
 
-            if self.timer_cond:
+            if self.timer_cond_BootLogo:
                 tim.deinit()
                 return 0
 
@@ -1262,6 +1261,9 @@ class PicoClock:
             ###副屏幕内容###
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
+
+    def timer_shot_BootLogo(self, _):
+        self.timer_cond_BootLogo = 1
 
     # 设置弹窗
     def fun_Setting(self):
@@ -1550,6 +1552,7 @@ class PicoClock:
             # 检测按钮做出反应
             if ButtonSign != 0 and self.is_button_ready == 1:
                 self.is_button_ready = 0
+                return 0
 
             elif ButtonSign == 0 and self.is_button_ready == 0:
                 self.is_button_ready = 1
@@ -1564,6 +1567,63 @@ class PicoClock:
             ###副屏幕内容###
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
+
+    # 省电模式
+    def fun_PowerSave(self):
+        while self.button_sign():
+            sleep_ms(300)
+
+        print("Enter PowerSave Mode")
+
+        # 清除所有画面
+        self.clear(id=2)
+        self.show(id=2)
+
+        self.button_l.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+        self.button_r.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+        self.button_u.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+        self.button_d.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+        self.button_y.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+        self.button_n.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
+
+        self.PowerSaveUpdate(1)
+
+        update_time = 10000
+        self.tim = Timer()
+        self.tim.init(mode=Timer.PERIODIC, period=update_time, callback=self.PowerSaveUpdate)
+        print("Timer Initiallized")
+
+
+
+        while True:
+            pass
+
+    def PowerSaveUpdate(self, _):
+        print("PowerSave Update")
+
+        self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+
+        ###主屏幕内容###
+        self.clear()  # 清除所有
+
+        # 绘制时间
+        self.text_m("%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1]), random.randint(0, 56))
+
+        self.show()  # 绘制所有
+
+    def PowerSaveClean(self, _):
+        print("Exit PowerSave Mode")
+        self.tim.deinit()
+        self.button_l.irq(handler=None)
+        self.button_r.irq(handler=None)
+        self.button_u.irq(handler=None)
+        self.button_d.irq(handler=None)
+        self.button_y.irq(handler=None)
+        self.button_n.irq(handler=None)
+        self.fun_MainMenu()
+
+
+
 
 
 if __name__ == '__main__':
