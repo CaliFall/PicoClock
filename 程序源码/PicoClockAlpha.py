@@ -1,5 +1,5 @@
 import machine
-from machine import Timer,Pin
+from machine import Timer, Pin, RTC
 from utime import sleep, sleep_ms
 from ssd1306 import SSD1306_I2C
 import ds3231
@@ -28,6 +28,8 @@ class PicoClock:
         self.init_pin()  # 初始化PIN
         self.init_var()  # 初始化全局变量
         self.init_icon()  # 定义符号
+        self.init_rtc()  # 初始化rtc
+
         self.fun_MainMenu()  # 进入主界面
 
     # 基础函数部分
@@ -74,6 +76,8 @@ class PicoClock:
         self.refresh_scale = 3  # 副屏幕刷新速度控制,是几就代表是主屏幕的几分之一
         self.sleep_time_learning = 0  # 可变的睡眠时间
         self.fps_limit = 9  # 帧率限制
+        self.time_out_count = 0  # 超时计时器当前计时
+        self.time_out_limit = 15 # 超时计时器上限
 
     def init_icon(self):
         self.icon_dic = {'icon_little_a': ['010', '101', '111', '101', '101'],
@@ -149,6 +153,22 @@ class PicoClock:
                          'icon_°': ['111', '101', '111']}
         self.icon_dic_keys = list(self.icon_dic.keys())
         self.icon_dic_keys.sort()
+
+    def init_rtc(self):
+        self.rtc = RTC()
+        t = ds3231.ReportList()  # 获取时间
+
+        sec = t[0]
+        min = t[1]
+        hou = t[2]
+        day = t[4]
+        mon = t[5]
+        yea = t[6]
+
+        tuple = (2000+yea, mon, day, 0, hou, min, sec, 0)
+
+        self.rtc.datetime(tuple)
+
 
     # 自定义绘制方法
     def draw_border(self, id=0):
@@ -342,7 +362,7 @@ class PicoClock:
     def sleep_button(self):
         sleep_ms(self.button_gap)
 
-    def fps_limiter(self, limit, frame_count=0, fps=60):
+    def fps_limiter(self, limit, frame_count=0, fps=0):
         if frame_count > limit + 1:
             self.sleep_time_learning += 1
         elif fps < limit - 1 and self.sleep_time_learning > 0:
@@ -401,7 +421,8 @@ class PicoClock:
     def fun_MainMenu(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        week_lis = ["Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]  # 星期名
+        is_oled_1_need_refresh = 1
+        week_lis = ["Mon", "Tues", "Wed", "Thur", "Fri", "Sat", "Sun"]  # 星期名
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
@@ -410,13 +431,14 @@ class PicoClock:
             self.fun_BootLogo()
 
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
             # 检测按钮做出反应
             if ButtonSign != 0 and self.is_button_ready == 1:
                 self.is_button_ready = 0
+                is_oled_1_need_refresh = 1
                 if ButtonSign == 'y':
                     self.fun_SubMenu()
                 elif ButtonSign == 'n':
@@ -426,24 +448,24 @@ class PicoClock:
 
             ###主屏幕内容###
             self.clear()  # 清除所有
-            # self.draw_border()  # 绘制边界
 
             # 绘制时间
-            self.text_m("%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 18)
+            self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 18)
             #  绘制日期
-            self.text_m("20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]), 28)
+            self.text_m("%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]), 28)
             #  绘制星期
-            self.text_m("%s" % (week_lis[self.TimeDS3231[3]]), 38)
+            self.text_m("%s" % (week_lis[self.current_time[3]]), 38)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
 
             self.show()  # 绘制所有
 
             ###副屏幕内容###
-            if self.frame_counter % self.refresh_scale == 0:
+            if self.frame_counter == 0 and is_oled_1_need_refresh == 1:
                 self.clear(id=1)  # 清除所有
                 self.text_little("Hello World", 0, 0, id=1)
                 self.show(id=1)  # 绘制所有
+                is_oled_1_need_refresh = 0
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 等待
 
@@ -451,7 +473,7 @@ class PicoClock:
     def fun_SubMenu(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]
+        self.sec_buffer = self.current_time[6]
 
         # 功能代号
         SHT31 = 'Temp & RH'
@@ -469,7 +491,7 @@ class PicoClock:
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -523,13 +545,13 @@ class PicoClock:
             self.text_m(index_lis[index_now], 28)  # 显示当前选中的功能名
             self.simple_bar(38, index_lis_len, index_now, id=0)  # 显示一个条,告诉用户当前位置
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
             self.clear(id=1)  # 清除所有
 
-            self.text_m("%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 0, id=1)
+            self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 0, id=1)
 
             self.show(id=1)  # 绘制所有
 
@@ -583,7 +605,7 @@ class PicoClock:
     def input_keyboard(self, msg_already=''):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
 
@@ -614,7 +636,7 @@ class PicoClock:
         focus_select_x = 0  # 指针x轴
         focus_select_y = 1  # 指针y轴
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
             # 检测按钮做出反应
@@ -759,7 +781,7 @@ class PicoClock:
             elif line_lis_all[focus_select_y][focus_select_x] == 'FX':
                 self.oled_0.rect(117, 45, 11, 9, 1)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -802,7 +824,7 @@ class PicoClock:
     def fx_window(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         fx_lis = ['acos()', 'acosh()', 'asin()', 'asinh()', 'atan()', 'atanh()',
                   'cos()', 'cosh()', 'degrees()', 'dist()', 'abs()', 'gcd()',
@@ -814,7 +836,7 @@ class PicoClock:
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -860,7 +882,7 @@ class PicoClock:
                 else:
                     self.oled_0.text(fx_lis[focus_y + x - 2 - len(fx_lis)], 20, 32 + (x - 2) * 8)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -871,12 +893,12 @@ class PicoClock:
     def fun_model(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -891,7 +913,7 @@ class PicoClock:
             self.clear()  # 清除所有
             # self.draw_border()  # 绘制边界
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -902,14 +924,14 @@ class PicoClock:
     def fun_SHT31(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
-        sht31 = sht30.SHT30(sda_pin=8,scl_pin=9)
+        sht31 = sht30.SHT30(sda_pin=8, scl_pin=9)
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -934,7 +956,7 @@ class PicoClock:
                 self.oled_0.text("Temp= " + str(t) + " C", 10, 18)
                 self.oled_0.text("RH= " + str(h) + " %", 26, 28)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.draw_icon(self.icon_dic.get('icon_°'), 103, 18)
             self.show()  # 绘制所有
 
@@ -943,7 +965,7 @@ class PicoClock:
                 self.clear(id=1)  # 清除所有
 
                 # 显示一个简易时钟
-                self.text_m("%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 0, id=1)
+                self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 0, id=1)
 
                 self.show(id=1)  # 绘制所有
 
@@ -953,7 +975,7 @@ class PicoClock:
     def fun_BaseConverter(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
 
@@ -963,7 +985,7 @@ class PicoClock:
 
         var_BASE = 0  # BASE变量,本质上是十进制
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1060,14 +1082,14 @@ class PicoClock:
             elif focus_now == 4:
                 self.oled_0.rect(40, 46, 48, 11, 1)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
             if self.frame_counter == 0:
                 self.clear(id=1)  # 清除所有
 
-                self.text_m("%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]), 0, id=1)
+                self.text_m("%02d:%02d:%02d" % (self.current_time[2], self.current_time[1], self.current_time[0]), 0, id=1)
 
                 self.show(id=1)  # 绘制所有
 
@@ -1077,12 +1099,12 @@ class PicoClock:
     def fun_IconTest(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1101,7 +1123,7 @@ class PicoClock:
             for i in range(len(self.icon_dic_keys)):
                 self.draw_icon(self.icon_dic.get(self.icon_dic_keys[i]), (i % 30) * 4, (i // 30) * 6 + 20)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -1112,7 +1134,7 @@ class PicoClock:
     def fun_REPL(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
@@ -1126,7 +1148,7 @@ class PicoClock:
         history_lis = []
 
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1186,7 +1208,7 @@ class PicoClock:
                 for i in range(len(history_lis)):
                     self.oled_0.text(history_lis[i], 0, 64 - 8 - i * 8)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show(id=0)
 
             ###副屏幕内容###
@@ -1234,7 +1256,7 @@ class PicoClock:
         self.timer_cond_BootLogo = 0
 
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1255,7 +1277,7 @@ class PicoClock:
 
             self.oled_0.blit(logo, 64 - 16, 32 - 16)
             self.text_m("Powered by RP2", 32 + 16 + 4)
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -1269,14 +1291,14 @@ class PicoClock:
     def fun_Setting(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
 
         focus_now = 0
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1314,7 +1336,7 @@ class PicoClock:
 
             self.oled_0.text("->", 4, focus_now * 15 + 28)
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -1330,7 +1352,7 @@ class PicoClock:
     def fun_SettingSwitch(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         #  将字典复制为列表
         setting_lis = list(self.setting_dic.items())
@@ -1343,7 +1365,7 @@ class PicoClock:
         self.show(id=2)  # 清空两个屏幕
 
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1410,7 +1432,7 @@ class PicoClock:
                 except Exception:
                     pass
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -1426,7 +1448,7 @@ class PicoClock:
     def fun_SettingTime(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
@@ -1439,7 +1461,7 @@ class PicoClock:
                        'Set Year', 'Set Month', 'Set Day', 'Set Week']
         week_lis = ["Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1455,7 +1477,7 @@ class PicoClock:
                     temp = self.input_keyboard()
                     if temp != 'null' and 1 <= len(temp) <= 2 and temp.isdigit():
                         ind = int(temp)
-                        time_set = self.TimeDS3231.copy()
+                        time_set = self.current_time.copy()
 
                         ok = 1
 
@@ -1518,20 +1540,20 @@ class PicoClock:
                 except Exception:
                     pass
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
             if self.frame_counter == 0:
                 self.clear(id=1)
                 # 绘制时间
-                self.oled_1.text("Time=%02d:%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1], self.TimeDS3231[0]),
+                self.oled_1.text("Time=%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]),
                                  0, 0)
                 #  绘制日期
-                self.oled_1.text("Date=20%d/%02d/%02d" % (self.TimeDS3231[6], self.TimeDS3231[5], self.TimeDS3231[4]),
+                self.oled_1.text("Date=20%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]),
                                  0, 8)
                 #  绘制星期
-                self.oled_1.text("Day of Week=%s" % (week_lis[self.TimeDS3231[3]]), 0, 16)
+                self.oled_1.text("Day of Week=%s" % (week_lis[self.current_time[3]]), 0, 16)
                 self.show(id=1)
 
             self.fps_limiter(limit=self.fps_limit, frame_count=self.frame_counter, fps=self.fps)  # 限制帧数
@@ -1540,12 +1562,12 @@ class PicoClock:
     def fun_UnitConverter(self):
         self.is_init_fps = 0  # fps计数器初始化
         self.is_button_ready = 0  # 按钮复位标志初始化
-        self.sec_buffer = self.TimeDS3231[0]  # 初始化记秒器
+        self.sec_buffer = self.current_time[6]  # 初始化记秒器
 
         self.clear(id=2)
         self.show(id=2)  # 清空两个屏幕
         while True:
-            self.TimeDS3231 = ds3231.ReportList()  # 获取时间
+            self.current_time = self.rtc.datetime()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1561,7 +1583,7 @@ class PicoClock:
             self.clear()  # 清除所有
             # self.draw_border()  # 绘制边界
 
-            self.show_fps(s=self.TimeDS3231[0])  # 显示fps
+            self.show_fps(s=self.current_time[6])  # 显示fps
             self.show()  # 绘制所有
 
             ###副屏幕内容###
@@ -1579,6 +1601,9 @@ class PicoClock:
         self.clear(id=2)
         self.show(id=2)
 
+        self.oled_1.poweroff()
+        self.oled_0.contrast(0)
+
         self.button_l.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
         self.button_r.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
         self.button_u.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
@@ -1586,44 +1611,34 @@ class PicoClock:
         self.button_y.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
         self.button_n.irq(trigger=Pin.IRQ_FALLING, handler=self.PowerSaveClean)
 
-        self.PowerSaveUpdate(1)
-
-        update_time = 10000
-        self.tim = Timer()
-        self.tim.init(mode=Timer.PERIODIC, period=update_time, callback=self.PowerSaveUpdate)
-        print("Timer Initiallized")
-
-
+        self.update_time = 15 * 1000
+        self.is_PowerSave = 1
+        div = 10
 
         while True:
-            pass
+            if not self.is_PowerSave:
+                return 0
 
-    def PowerSaveUpdate(self, _):
-        print("PowerSave Update")
+            self.current_time = ds3231.ReportList()  # 获取时间
+            ###主屏幕内容###
+            self.clear()  # 清除所有
+            self.text_m("%02d:%02d" % (self.current_time[2], self.current_time[1]), random.randint(0, 56))  # 绘制时间
+            self.show()  # 绘制所有
 
-        self.TimeDS3231 = ds3231.ReportList()  # 获取时间
-
-        ###主屏幕内容###
-        self.clear()  # 清除所有
-
-        # 绘制时间
-        self.text_m("%02d:%02d" % (self.TimeDS3231[2], self.TimeDS3231[1]), random.randint(0, 56))
-
-        self.show()  # 绘制所有
-
+            for _ in range(div):
+                sleep_ms(int(self.update_time/div))
     def PowerSaveClean(self, _):
         print("Exit PowerSave Mode")
-        self.tim.deinit()
         self.button_l.irq(handler=None)
         self.button_r.irq(handler=None)
         self.button_u.irq(handler=None)
         self.button_d.irq(handler=None)
         self.button_y.irq(handler=None)
         self.button_n.irq(handler=None)
-        self.fun_MainMenu()
-
-
-
+        self.is_PowerSave = 0
+        self.update_time = 0
+        self.oled_1.poweron()
+        self.oled_0.contrast(255)
 
 
 if __name__ == '__main__':
