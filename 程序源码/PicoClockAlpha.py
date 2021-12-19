@@ -448,15 +448,17 @@ class PicoClock:
 
             ###主屏幕内容###
             self.clear()  # 清除所有
+            try:
+                # 绘制时间
+                self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 18)
+                #  绘制日期
+                self.text_m("%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]), 28)
+                #  绘制星期
+                self.text_m("%s" % (week_lis[self.current_time[3]]), 38)
 
-            # 绘制时间
-            self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 18)
-            #  绘制日期
-            self.text_m("%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]), 28)
-            #  绘制星期
-            self.text_m("%s" % (week_lis[self.current_time[3]]), 38)
-
-            self.show_fps(s=self.current_time[6])  # 显示fps
+                self.show_fps(s=self.current_time[6])  # 显示fps
+            except:
+                pass
 
             self.show()  # 绘制所有
 
@@ -1089,7 +1091,7 @@ class PicoClock:
             if self.frame_counter == 0:
                 self.clear(id=1)  # 清除所有
 
-                self.text_m("%02d:%02d:%02d" % (self.current_time[2], self.current_time[1], self.current_time[0]), 0, id=1)
+                self.text_m("%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]), 0, id=1)
 
                 self.show(id=1)  # 绘制所有
 
