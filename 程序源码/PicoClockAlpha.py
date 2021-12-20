@@ -154,8 +154,10 @@ class PicoClock:
         self.icon_dic_keys = list(self.icon_dic.keys())
         self.icon_dic_keys.sort()
 
-    def init_rtc(self):
-        self.rtc = RTC()
+    def init_rtc(self, mode='init'):
+        if mode == 'init':
+            self.rtc = RTC()
+
         t = ds3231.ReportList()  # 获取时间
 
         sec = t[0]
@@ -363,7 +365,7 @@ class PicoClock:
         sleep_ms(self.button_gap)
 
     def fps_limiter(self, limit, frame_count=0, fps=0):
-        if frame_count > limit + 1:
+        if frame_count > limit + 1 and self.sleep_time_learning <= 60:
             self.sleep_time_learning += 1
         elif fps < limit - 1 and self.sleep_time_learning > 0:
             if random.randint(0, 1):  # 减缓延时下降速度
@@ -465,7 +467,7 @@ class PicoClock:
             ###副屏幕内容###
             if self.frame_counter == 0 and is_oled_1_need_refresh == 1:
                 self.clear(id=1)  # 清除所有
-                self.text_little("Hello World", 0, 0, id=1)
+                self.text_m("Hello World", 12, id=1)
                 self.show(id=1)  # 绘制所有
                 is_oled_1_need_refresh = 0
 
@@ -1461,9 +1463,10 @@ class PicoClock:
         focus_now = 0  # 当前选择
         setting_lis = ['Set Hour', 'Set Minute', 'Set Second',
                        'Set Year', 'Set Month', 'Set Day', 'Set Week']
-        week_lis = ["Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat"]
+        week_lis = ["Mon", "Tues", "Wed", "Thur", "Fri", "Sat", "Sun"]
         while True:
-            self.current_time = self.rtc.datetime()  # 获取时间
+            self.current_time = self.rtc.datetime()
+            self.ds3231_time = ds3231.ReportList()  # 获取时间
 
             # 按钮部分
             ButtonSign = self.button_sign()  # 获取按钮状态
@@ -1479,7 +1482,7 @@ class PicoClock:
                     temp = self.input_keyboard()
                     if temp != 'null' and 1 <= len(temp) <= 2 and temp.isdigit():
                         ind = int(temp)
-                        time_set = self.current_time.copy()
+                        time_set = self.ds3231_time.copy()
 
                         ok = 1
 
@@ -1490,7 +1493,7 @@ class PicoClock:
                         elif setting_lis[focus_now] == 'Set Hour' and 0 <= ind <= 23:
                             time_set[2] = ind
                         elif setting_lis[focus_now] == 'Set Week' and 0 <= ind <= 7:
-                            time_set[3] = ind % 7
+                            time_set[3] = ind - 1
                         elif setting_lis[focus_now] == 'Set Day' and 0 <= ind <= 31:
                             time_set[4] = ind
                         elif setting_lis[focus_now] == 'Set Month' and 0 <= ind <= 12:
@@ -1506,6 +1509,8 @@ class PicoClock:
                                 time_set[i] = int(str(time_set[i]), 16)
                             time_set = bytes(time_set)
                             ds3231.SetTime(time_set)
+
+                            self.init_rtc(mode='update')
 
                             self.jump_window(code='Success')
                     else:
@@ -1552,7 +1557,7 @@ class PicoClock:
                 self.oled_1.text("Time=%02d:%02d:%02d" % (self.current_time[4], self.current_time[5], self.current_time[6]),
                                  0, 0)
                 #  绘制日期
-                self.oled_1.text("Date=20%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]),
+                self.oled_1.text("Date=%d/%02d/%02d" % (self.current_time[0], self.current_time[1], self.current_time[2]),
                                  0, 8)
                 #  绘制星期
                 self.oled_1.text("Day of Week=%s" % (week_lis[self.current_time[3]]), 0, 16)
